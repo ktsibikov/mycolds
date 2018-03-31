@@ -10,7 +10,7 @@ import argparse
 
 import cv2
 
-from my_colds.data.handle_image_data import ImageProcessor
+from my_colds.classification.sore_throat.data import ImageProcessor
 
 
 def get_class_lable(file_name: str) -> str:
