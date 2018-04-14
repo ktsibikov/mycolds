@@ -3,7 +3,8 @@ import os
 import argparse
 
 import keras
-import Augmentor
+
+# TODO: remove so as obsolete code!
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--input-dir', action='store', dest='input_dir', required=True)

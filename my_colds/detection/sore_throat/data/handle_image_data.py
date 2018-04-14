@@ -1,7 +1,5 @@
 """
-This module will help you work with images.
-Useful tools to load, convert and process images to any
-different formats.
+Basic set of tools to make augmentations on image.
 """
 
 import cv2
