@@ -19,10 +19,7 @@ def index():
     try:
         detector = PlaqueDetection(photo_url)
         not_plaque, plaque = detector.detect()
-        if plaque > not_plaque:
-            res = True
-        else:
-            res = False
+        res = plaque > not_plaque
     except Exception as e:
         abort(500, 'Something went wrong...')
 
