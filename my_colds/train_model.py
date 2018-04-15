@@ -2,98 +2,115 @@ import sys
 import os
 import argparse
 
-import keras
-
-# TODO: remove so as obsolete code!
+from keras.preprocessing.image import ImageDataGenerator
+from keras.layers import Input
+from keras.applications.mobilenet import MobileNet
+from keras import backend as K
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--input-dir', action='store', dest='input_dir', required=True)
-parser.add_argument('--output-dir', action='store', dest='output_dir', required=True)
+parser.add_argument('--train-data', action='store', dest='train_data', required=True)
+parser.add_argument('--valid-data', action='store', dest='valid_data', required=True)
+parser.add_argument('--model-path', action='store', dest='model_path', required=True)
+parser.add_argument(
+    '--model-weights-path',
+    action='store',
+    dest='model_weights_path',
+    required=True
+)
 parser.add_argument('--num-classes', nargs='?', type=int, dest='num_classes', default=2)
-parser.add_argument('--batch-size', nargs='?', type=int, dest='batch_size', default=32)
-parser.add_argument('--num-epochs', nargs='?', type=int, dest='epochs', default=5)
+parser.add_argument('--batch-size', nargs='?', type=int, dest='batch_size', default=8)
+parser.add_argument('--train-samples', nargs='?', type=int, dest='train_samples', required=True)
+parser.add_argument('--valid-samples', nargs='?', type=int, dest='valid_samples', required=True)
+parser.add_argument('--num-epochs', nargs='?', type=int, dest='epochs', default=1)
 parser.add_argument('--loss', nargs='?', type=str, dest='loss', default='categorical_crossentropy')
 parser.add_argument('--optimizer', nargs='?', type=str, dest='optimizer', default='adam')
 parser.add_argument(
-    '--final-img-dims',
-    default=[256, 256, 3],
-    nargs=3,
-    metavar=('height', 'weight', 'depth'),
+    '--target-size',
+    default=[224, 224],
+    nargs=2,
+    metavar=('height', 'weight'),
     type=int,
-    help='specify a range',
-    dest='img_dims'
-)
-parser.add_argument(
-    '--metrics',
-    default=['accuracy'],
-    type=str,
-    dest='metrics'
+    help='Target image size',
+    dest='target_size'
 )
 
 ALPHA = 1
 
 
-def build_augmentation_pipeline(path):
-    p = Augmentor.Pipeline(path)
-    p.flip_top_bottom(probability=0.1)
-    p.rotate(probability=0.3, max_left_rotation=5, max_right_rotation=5)
-    return p
-
-
-def run_training(train_data_generator, model_params, fit_params, loss, optimizer, metrics, model_path):
-    model = keras.applications.mobilenet.MobileNet(**model_params)
-
-    model.compile(loss=loss, optimizer=optimizer, metrics=metrics)
-
-    model.fit_generator(train_data_generator, **fit_params)
-
-    model.save(model_path)
-
-
 def main(args):
-    input_dir = args.input_dir
-    output_dir = args.output_dir
+    train_data = args.train_data
+    valid_data = args.valid_data
+    nb_train_samples = args.train_samples
+    nb_validation_samples = args.valid_samples
+    model_path = args.model_path
+    model_weights_path = args.model_weights_path
     num_classes = args.num_classes
     batch_size = args.batch_size
     epochs = args.epochs
     loss = args.loss
     optimizer = args.optimizer
-    input_img_shape = args.img_dims
-    metrics = args.metrics
+    img_width, img_height = args.target_size
 
-    assert len(input_img_shape) == 3, f'--final-img-dims {img_dims} should have 3 dimensions'
+    if not os.path.isdir(train_data):
+        raise EnvironmentError(f'--train-data {train_data} should exist')
 
-    if not os.path.isdir(input_dir):
-        raise EnvironmentError(f'--input-dir {input_dir} should exist')
+    if not os.path.isdir(valid_data):
+        raise EnvironmentError(f'--valid-data {valid_data} should exist')
 
-    train_part_dir = f'{input_dir}/train'
-    valid_part_dir = f'{input_dir}/valid'
-
-    train_p = build_augmentation_pipeline(train_part_dir)
-    train_g = train_p.keras_generator(batch_size=batch_size)
-    valid_p = build_augmentation_pipeline(valid_part_dir)
-    valid_g = valid_p.keras_generator(batch_size=batch_size)
-    print(f'Training MobileNet for {epochs} epochs.')
+    if K.image_data_format() == 'channels_first':
+        input_shape = (3, img_width, img_height)
+    else:
+        input_shape = (img_width, img_height, 3)
 
     model_params = {
-        'input_tensor': keras.layers.Input(shape=input_img_shape),
-        'alpha': ALPHA,
+        'input_tensor': Input(shape=input_shape),
         'classes': num_classes,
         'weights': None,
     }
 
-    fit_params = {
-        'steps_per_epoch': len(train_p.augmentor_images) / batch_size,
-        'epochs': epochs,
-        'validation_steps': len(valid_p.augmentor_images) / batch_size,
-        'validation_data': valid_g,
-        'shuffle': True,
-        'verbose': 1,
-    }
+    print(
+        f'Start training mobile net for {epochs} epochs.',
+        f'{nb_train_samples} train samples, {nb_validation_samples} valid samples'
+    )
 
-    os.makedirs(output_dir, exist_ok=True)
-    model_path = f'{output_dir}/mobilenet_{epochs}_epochs.h5'
-    run_training(train_g, model_params, fit_params, loss, optimizer, metrics, model_path)
+    model = MobileNet(**model_params)
+    model.compile(
+        loss=loss,
+        optimizer=optimizer,
+        metrics=['accuracy']
+    )
+
+    train_datagen = ImageDataGenerator(rescale=1. / 255)
+    test_datagen = ImageDataGenerator(rescale=1. / 255)
+
+    train_generator = train_datagen.flow_from_directory(
+        train_data,
+        target_size=(img_width, img_height),
+        batch_size=batch_size,
+        class_mode='categorical',
+    )
+
+    validation_generator = test_datagen.flow_from_directory(
+        valid_data,
+        target_size=(img_width, img_height),
+        batch_size=batch_size,
+        class_mode='categorical',
+    )
+
+    model.fit_generator(
+        train_generator,
+        steps_per_epoch=nb_train_samples // batch_size,
+        epochs=epochs,
+        validation_data=validation_generator,
+        validation_steps=nb_validation_samples // batch_size,
+        verbose=1
+    )
+
+    model.save(model_path)
+    model.save_weights(model_weights_path)
+
+    print('Model saved.')
+    return 0
 
 
 if __name__ == '__main__':
