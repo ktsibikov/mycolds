@@ -25,7 +25,7 @@ def index():
 
     return json.dumps(
         {
-            'is_plaque': res
+            'is_plaque': bool(res)
         }
     )
 
